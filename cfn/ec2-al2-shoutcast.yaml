@@ -1,0 +1,500 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Deploy ASG for Shoutcast server'
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+    - Label:
+        default: 'Parent Stacks'
+      Parameters:
+      - ParentVPC
+      - ParentSSHBastionStack
+    - Label:
+        default: 'EC2 Parameters'
+      Parameters:
+      - AdminPassword
+      - AmiId
+      - BroadcastIP
+      - BroadcastPort
+      - StreamPassword
+      - S3Bucket
+      - InstanceType
+      - SubnetName
+      - KeyName
+      - IAMUserSSHAccess
+      - LogsRetentionInDays
+      - Domain
+      - Subdomain
+      - CertificateARN
+      
+Parameters:
+  AdminPassword:
+    Description: Password for the Shoutcast admin
+    Type: String
+  AmiId:
+    Description: Value of the AMI identifier for the shoutcast EC2
+    Type: String
+    Default: 'ami-0bef6cc322bfff646'
+  BroadcastIP:
+    Description: IP address of the broadcast source for shoutcast station
+    Type: String
+  BroadcastPort:
+    Description: TCP port value for Shoutcast output stream
+    Type: String
+  ParentVPC:
+    Description: 'Stack name of parent VPC stack based on vpc/vpc-*azs.yaml template.'
+    Type: String
+  KeyName:
+    Description: 'Optional key pair of the ec2-user to establish a SSH connection to the EC2 instance.'
+    Type: 'String'
+    Default: ''
+  InstanceType:
+    Description: 'The instance type for the EC2 instance.'
+    Type: String
+    Default: 't2.micro'
+    AllowedValues:
+    - 't2.micro'
+    - 't2.small'
+    - 't2.medium'
+    - 't2.large'
+  LogsRetentionInDays:
+    Description: 'Specifies the number of days you want to retain log events.'
+    Type: Number
+    Default: 14
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1827, 3653]
+  Domain:
+    Description: The root domain value
+    Type: String
+  Subdomain:
+    Description: The subdomain value
+    Type: String
+  CertificateARN:
+    Description: ACM certificate ARN for the ALB
+    Type: String
+  StreamPassword:
+    Description: Stream broadcast password
+    Type: String
+
+Conditions:
+  HasKeyName: !Not [!Equals [!Ref KeyName, '']]
+
+#############
+# Resources #
+#############
+
+Resources:
+
+  Logs:
+    Type: 'AWS::Logs::LogGroup'
+    Properties:
+      RetentionInDays: !Ref LogsRetentionInDays
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub '${AWS::StackName}'
+      VpcId:
+        'Fn::ImportValue': !Sub '${ParentVPC}-VPC'
+
+  SecurityGroupInSSH1:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref SecurityGroup
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 65535
+      CidrIp: !Ref BroadcastIP
+
+  InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: '/'
+      Roles:
+      - !Ref IAMRole
+
+  IAMRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - 'ec2.amazonaws.com'
+          Action:
+          - 'sts:AssumeRole'
+      Path: '/'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+      - PolicyName: logs
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - 'logs:CreateLogGroup'
+            - 'logs:CreateLogStream'
+            - 'logs:PutLogEvents'
+            - 'logs:DescribeLogStreams'
+            Resource:
+            - 'arn:aws:logs:*:*:*'
+      - PolicyName: route53
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - 'route53:ChangeResourceRecordSets'
+            Resource:
+              - 'arn:aws:route53:::hostedzone/Z08913362HGAFVJHK0DE9'
+          - Effect: Allow
+            Action:
+            - 'route53:ListHostedZonesByName'
+            Resource: '*'
+
+  DNSRecord:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneName: !Ref Domain
+      Comment: Zone apex alias targeted to LoadBalancer.
+      RecordSets:
+      - Name: !Ref Subdomain
+        Type: A
+        AliasTarget:
+          HostedZoneId: !GetAtt 'LoadBalancer.CanonicalHostedZoneID'
+          DNSName: !GetAtt 'LoadBalancer.DNSName'
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId:
+        Fn::ImportValue:
+          !Sub "${ParentVPC}-VPC"
+      Port: 80
+      Protocol: HTTP
+      Matcher:
+        HttpCode: 200-299
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: 30
+
+  LoadBalancerListenerHTTP:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        -
+          Type: redirect
+          RedirectConfig:
+            Protocol: "HTTPS"
+            Port: "443"
+            Host: "#{host}"
+            Path: "/#{path}"
+            Query: "#{query}"
+            StatusCode: "HTTP_301"
+      LoadBalancerArn:
+        Ref: LoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  LoadBalancerListenerHTTPS:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref CertificateARN
+
+  WebServerLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Ref AWS::StackName
+      RetentionInDays: 365
+
+  WebServerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: 'shoutcast'
+      VpcId: {'Fn::ImportValue': !Sub '${ParentVPC}-VPC'}
+      SecurityGroupIngress:
+      - FromPort: 80
+        IpProtocol: tcp
+        SourceSecurityGroupId: !Ref SecurityGroupALB
+        ToPort: 80
+      - FromPort: 80
+        IpProtocol: tcp
+        CidrIp: !Ref BroadcastIP
+        ToPort: 80
+
+  SecurityGroupALB:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: !Sub ${AWS::StackName}-alb
+      SecurityGroupIngress:
+        - CidrIp: "0.0.0.0/0"
+          IpProtocol: "TCP"
+          FromPort: 80
+          ToPort: 80
+        - CidrIp: "0.0.0.0/0"
+          IpProtocol: "TCP"
+          FromPort: 443
+          ToPort: 443
+      VpcId:
+        Fn::ImportValue:
+          !Sub "${ParentVPC}-VPC"
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${AWS::StackName}-alb
+      Subnets:
+        - Fn::ImportValue:
+            !Sub "${ParentVPC}-SubnetAPublic"
+        - Fn::ImportValue:
+            !Sub "${ParentVPC}-SubnetBPublic"
+      SecurityGroups:
+        - !Ref SecurityGroupALB
+
+  LaunchTemplate:
+    Type: 'AWS::EC2::LaunchTemplate'
+    Metadata:
+      'AWS::CloudFormation::Init':
+        configSets:
+          default: [awslogs]
+        awslogs:
+          packages:
+            yum:
+              awslogs: []
+          files:
+            '/etc/awslogs/awscli.conf':
+              content: !Sub |
+                [default]
+                region = ${AWS::Region}
+                [plugins]
+                cwlogs = cwlogs
+              mode: '000644'
+              owner: root
+              group: root
+            '/etc/awslogs/awslogs.conf':
+              content: !Sub |
+                [general]
+                state_file = /var/lib/awslogs/agent-state
+                [/var/log/amazon/ssm/amazon-ssm-agent.log]
+                datetime_format = %Y-%m-%d %H:%M:%S
+                file = /var/log/amazon/ssm/amazon-ssm-agent.log
+                log_stream_name = {instance_id}/var/log/amazon/ssm/amazon-ssm-agent.log
+                log_group_name = ${WebServerLogs}
+                [/var/log/amazon/ssm/errors.log]
+                datetime_format = %Y-%m-%d %H:%M:%S
+                file = /var/log/amazon/ssm/errors.log
+                log_stream_name = {instance_id}/var/log/amazon/ssm/errors.log
+                log_group_name = ${WebServerLogs}
+                [/var/log/audit/audit.log]
+                file = /var/log/audit/audit.log
+                log_stream_name = {instance_id}/var/log/audit/audit.log
+                log_group_name = ${WebServerLogs}
+                [/var/log/awslogs.log]
+                datetime_format = %Y-%m-%d %H:%M:%S
+                file = /var/log/awslogs.log
+                log_stream_name = {instance_id}/var/log/awslogs.log
+                log_group_name = ${WebServerLogs}
+                [/var/log/boot.log]
+                file = /var/log/boot.log
+                log_stream_name = {instance_id}/var/log/boot.log
+                log_group_name = ${WebServerLogs}
+                [/var/log/cfn-hup.log]
+                datetime_format = %Y-%m-%d %H:%M:%S
+                file = /var/log/cfn-hup.log
+                log_stream_name = {instance_id}/var/log/cfn-hup.log
+                log_group_name = ${WebServerLogs}
+                [/var/log/cfn-init-cmd.log]
+                datetime_format = %Y-%m-%d %H:%M:%S
+                file = /var/log/cfn-init-cmd.log
+                log_stream_name = {instance_id}/var/log/cfn-init-cmd.log
+                log_group_name = ${WebServerLogs}
+                [/var/log/cfn-init.log]
+                datetime_format = %Y-%m-%d %H:%M:%S
+                file = /var/log/cfn-init.log
+                log_stream_name = {instance_id}/var/log/cfn-init.log
+                log_group_name = ${WebServerLogs}
+                [/var/log/cfn-wire.log]
+                datetime_format = %Y-%m-%d %H:%M:%S
+                file = /var/log/cfn-wire.log
+                log_stream_name = {instance_id}/var/log/cfn-wire.log
+                log_group_name = ${WebServerLogs}
+                [/var/log/cloud-init-output.log]
+                file = /var/log/cloud-init-output.log
+                log_stream_name = {instance_id}/var/log/cloud-init-output.log
+                log_group_name = ${WebServerLogs}
+                [/var/log/cloud-init.log]
+                datetime_format = %b %d %H:%M:%S
+                file = /var/log/cloud-init.log
+                log_stream_name = {instance_id}/var/log/cloud-init.log
+                log_group_name = ${WebServerLogs}
+                [/var/log/cron]
+                datetime_format = %b %d %H:%M:%S
+                file = /var/log/cron
+                log_stream_name = {instance_id}/var/log/cron
+                log_group_name = ${WebServerLogs}
+                [/var/log/dmesg]
+                file = /var/log/dmesg
+                log_stream_name = {instance_id}/var/log/dmesg
+                log_group_name = ${WebServerLogs}
+                [/var/log/grubby_prune_debug]
+                file = /var/log/grubby_prune_debug
+                log_stream_name = {instance_id}/var/log/grubby_prune_debug
+                log_group_name = ${WebServerLogs}
+                [/var/log/maillog]
+                datetime_format = %b %d %H:%M:%S
+                file = /var/log/maillog
+                log_stream_name = {instance_id}/var/log/maillog
+                log_group_name = ${WebServerLogs}
+                [/var/log/messages]
+                datetime_format = %b %d %H:%M:%S
+                file = /var/log/messages
+                log_stream_name = {instance_id}/var/log/messages
+                log_group_name = ${WebServerLogs}
+                [/var/log/secure]
+                datetime_format = %b %d %H:%M:%S
+                file = /var/log/secure
+                log_stream_name = {instance_id}/var/log/secure
+                log_group_name = ${WebServerLogs}
+                [/var/log/yum.log]
+                datetime_format = %b %d %H:%M:%S
+                file = /var/log/yum.log
+                log_stream_name = {instance_id}/var/log/yum.log
+                log_group_name = ${WebServerLogs}
+              mode: '000644'
+              owner: root
+              group: root
+          services:
+            sysvinit:
+              awslogsd:
+                enabled: true
+                ensureRunning: true
+                packages:
+                  yum:
+                  - awslogs
+                files:
+                - '/etc/awslogs/awslogs.conf'
+                - '/etc/awslogs/awscli.conf'
+    Properties:
+      LaunchTemplateData:
+        BlockDeviceMappings:
+        - DeviceName: '/dev/xvda'
+          Ebs:
+            Encrypted: true
+            VolumeType: gp3
+        IamInstanceProfile:
+          Name: !Ref InstanceProfile
+        ImageId: !Ref AmiId
+        InstanceType: !Ref InstanceType
+        KeyName: !If [HasKeyName, !Ref KeyName, !Ref 'AWS::NoValue']
+        MetadataOptions:
+          HttpTokens: required
+        NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          Groups:
+          - !Ref WebServerSecurityGroup
+        UserData:
+          'Fn::Base64': !Sub |
+            #!/bin/bash
+            yum install -y aws-cfn-bootstrap
+            /opt/aws/bin/cfn-init -v --region ${AWS::Region} --stack ${AWS::StackName} --resource LaunchTemplate
+            /opt/aws/bin/cfn-signal -e $? --region ${AWS::Region} --stack ${AWS::StackName} --resource AutoScalingGroup
+            TOKEN=$(curl -X PUT -H "X-aws-ec2-metadata-token-ttl-seconds: 600" "http://169.254.169.254/latest/api/token")
+            PUBLIC_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" -s http://169.254.169.254/latest/meta-data/public-ipv4)
+            cat << EOF > r53-record-update-bootstrap.json
+            {
+              "Comment": "Updating R53 record to target ALB member public ip",
+              "Changes": [
+                {
+                  "Action": "UPSERT",
+                  "ResourceRecordSet": {
+                    "Name": "broadcast.metro-radio.com",
+                    "Type": "A",
+                    "TTL": 300,
+                    "ResourceRecords": [
+                      {
+                        "Value":"$(echo $PUBLIC_IP)"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+            EOF
+            aws route53 change-resource-record-sets --hosted-zone-id Z08913362HGAFVJHK0DE9 --change-batch file://r53-record-update-bootstrap.json
+            cd /tmp
+            yum update
+            yum install -y nano git wget
+            yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
+            systemctl start amazon-ssm-agent
+            curl -O https://bootstrap.pypa.io/pip/2.7/get-pip.py
+            python ./get-pip.py
+            pip install awscli
+            useradd shoutcast
+            cd /home/shoutcast
+            mkdir /home/shoutcast/tools
+            curl -O http://download.nullsoft.com/shoutcast/tools/sc_serv2_linux_x64-latest.tar.gz
+            mv sc_serv2_linux_x64-latest.tar.gz /home/shoutcast/tools
+            tar -zxvf /home/shoutcast/tools/sc_serv2_linux_x64-latest.tar.gz
+            chown -R shoutcast:shoutcast /home/shoutcast
+            cp /home/shoutcast/examples/sc_serv_basic.conf /home/shoutcast/sc_serv_basic.conf
+            sed -i 's/testing/shoutcast/g' /home/shoutcast/sc_serv_basic.conf
+            sed -i 's/;portbase/portbase/g' /home/shoutcast/sc_serv_basic.conf
+            sed -i 's/8000/${BroadcastPort}/g' /home/shoutcast/sc_serv_basic.conf
+            sed -i 's/testing/${StreamPassword}/g' /home/shoutcast/sc_serv_basic.conf
+            sed -i 's/changeme/${AdminPassword}/g' /home/shoutcast/sc_serv_basic.conf
+            sed -i 's/My Test Server/Metro Radio/g' /home/shoutcast/sc_serv_basic.conf
+            sed -i 's/www.shoutcast.com/outerspace/g' /home/shoutcast/sc_serv_basic.conf
+            cd /home/shoutcast/ && ./sc_serv daemon sc_serv_basic.conf
+
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+      - {'Fn::ImportValue': !Sub '${ParentVPC}-SubnetAPublic'}
+      - {'Fn::ImportValue': !Sub '${ParentVPC}-SubnetBPublic'}
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt 'LaunchTemplate.LatestVersionNumber'
+      TargetGroupARNs:
+        - !Ref TargetGroup
+      MinSize: 0
+      MaxSize: 2
+      DesiredCapacity: 1
+      Tags: 
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-shoutcast"
+          PropagateAtLaunch: true
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT10M
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        MaxBatchSize: 1
+        PauseTime: PT10M
+        WaitOnResourceSignals: true
+
+Outputs:
+  TemplateID:
+    Description: 'cloud template id'
+    Value: 'ec2/ec2-shoutcast'
+  AlbDnsName:
+    Description: 'The DNS name of the public ALB.'
+    Value: !GetAtt LoadBalancer.DNSName
+    Export:
+      Name: !Sub '${AWS::StackName}-ALB-DNS'
