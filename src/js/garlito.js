@@ -253,7 +253,28 @@
 
         searchSong(filterSongTitle(currentSong));
     });
-    
+
+
+  const url = 'https://blast.metro-radio.com/statistics?json=1';
+
+  fetch(url)
+    .then(response => {
+      if (response.ok) {
+        return response.json();
+      } else {
+        throw new Error('Network response was not ok');
+      }
+    })
+    .then(data => {
+      const songTitle = data.streams[0].songtitle;
+
+      const nowPlayingDiv = document.getElementById('nowPlaying');
+
+      nowPlayingDiv.textContent = 'Now Playing: ' + songTitle;
+    })
+    .catch(error => {
+      console.error('Error:', error);
+    });    
 
 /*
 $.ajax({
