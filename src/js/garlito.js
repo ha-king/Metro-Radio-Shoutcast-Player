@@ -239,7 +239,9 @@ var diditwork = $.getJSON( statisticsUrl, function() {
     
     // First Fetch of the data
     $.getJSON(statisticsUrl, function(data) {
-
+        console.log("Finally inside getJSON");
+        console.log(data);
+        
         var song = data.streams[0].songtitle;
         console.log(song);
 
