@@ -223,7 +223,7 @@
     
     
     // First Fetch of the data
-    $.getJSON('https://blast.metro-radio.com/' + statisticsUrl, function(data) {
+    $.getJSON(statisticsUrl, function(data) {
 
         var song = data.streams[0].songtitle;
         console.log(song);
