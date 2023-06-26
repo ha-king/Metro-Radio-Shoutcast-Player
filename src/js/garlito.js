@@ -220,7 +220,24 @@
             }
         });
     }
-    
+
+         
+        
+var diditwork = $.getJSON( statisticsUrl, function() {
+  console.log( "success" );
+})
+  .done(function() {
+    console.log( "second success" );
+  })
+  .fail(function() {
+    console.log( "error" );
+  })
+  .always(function() {
+    console.log( "complete" );
+  });
+});
+
+        
     
     // First Fetch of the data
     $.getJSON(statisticsUrl, function(data) {
@@ -254,91 +271,21 @@
         searchSong(filterSongTitle(currentSong));
     });
 
-
-  const url = 'https://blast.metro-radio.com/statistics?json=1';
-
-  fetch(url)
-    .then(response => {
-      if (response.ok) {
-        return response.json();
-      } else {
-        throw new Error('Network response was not ok');
-      }
-    })
-    .then(data => {
-      const songTitle = data.streams[0].songtitle;
-
-      const nowPlayingDiv = document.getElementById('nowPlaying');
-
-      nowPlayingDiv.textContent = 'Now Playing: ' + songTitle;
-    })
-    .catch(error => {
-      console.error('Error:', error);
-    });    
-
-/*
-$.ajax({
-    url: 'https://blast.metro-radio.com/' + statisticsUrl,
-    dataType: 'jsonp',
-    success: function(data) {
-
-        var song = data.streams[0].songtitle;
-        console.log(song);
-
-        var currentlisteners = data.streams[0].currentlisteners;
-
-        var servertitle = data.streams[0].servertitle;
-        console.log(servertitle);
-
-        var currentSong = song;
-        console.log(currentSong);
-
-        var serverTitle = servertitle;
-        console.log(serverTitle);
-
-        current_song.empty();
-
-        current_song.append(filterSongTitle(currentSong));
-
-        server_title.empty();
-
-        server_title.append(returningSameString(serverTitle));
-
-        searchSong(filterSongTitle(currentSong));
-    },
-    error: function() {
-        console.error("Could not get song title.");
-    }
-});
-*/
-
-
-
-
-
-        
-    /*     
-    // Every 5 seconds refresh and calls the api to fetch new data
-    setInterval(function(){
-        $.getJSON('https://blast.metro-radio.com/' + statisticsUrl, function(data) {
-
-            var song = data.streams[0].songtitle;
-
-            //song = song.split(" - ");
-
-            //song = song[1] + " - " + song[2];
-
-            var currentSong =song;
-
-            current_song.empty();
-
-            current_song.append(filterSongTitle(currentSong));
-
-            searchSong(filterSongTitle(currentSong));
-        });
-    }, 5000);
-    */
     return _this;
+
+    var doesitstillwork = $.getJSON( statisticsUrl, function() {
+  console.log( "ssssuccess" );
+})
+  .done(function() {
+    console.log( "ssssecond success" );
+  })
+  .fail(function() {
+    console.log( "eeeerror" );
+  })
+  .always(function() {
+    console.log( "cccccomplete" );
+  });
+});
 
     };
 
