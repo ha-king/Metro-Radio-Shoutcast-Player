@@ -235,8 +235,6 @@ var diditwork = $.getJSON( statisticsUrl, function() {
   .always(function() {
     console.log( "complete" );
   });
-});
-
         
     
     // First Fetch of the data
@@ -285,7 +283,6 @@ var diditwork = $.getJSON( statisticsUrl, function() {
   .always(function() {
     console.log( "cccccomplete" );
   });
-});
 
     };
 
