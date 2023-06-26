@@ -221,7 +221,7 @@
         });
     }
     
-    /*
+    
     // First Fetch of the data
     $.getJSON('https://blast.metro-radio.com/' + statisticsUrl, function(data) {
 
@@ -253,9 +253,9 @@
 
         searchSong(filterSongTitle(currentSong));
     });
-    */
+    
 
-// First Fetch of the data
+/*
 $.ajax({
     url: 'https://blast.metro-radio.com/' + statisticsUrl,
     dataType: 'jsonp',
@@ -289,6 +289,7 @@ $.ajax({
         console.error("Could not get song title.");
     }
 });
+*/
 
 
 
