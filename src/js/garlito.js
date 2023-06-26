@@ -221,7 +221,7 @@
         });
     }
     
-
+    /*
     // First Fetch of the data
     $.getJSON('https://blast.metro-radio.com/' + statisticsUrl, function(data) {
 
@@ -253,6 +253,48 @@
 
         searchSong(filterSongTitle(currentSong));
     });
+    */
+
+// First Fetch of the data
+$.ajax({
+    url: 'https://blast.metro-radio.com/' + statisticsUrl,
+    dataType: 'jsonp',
+    success: function(data) {
+
+        var song = data.streams[0].songtitle;
+        console.log(song);
+
+        var currentlisteners = data.streams[0].currentlisteners;
+
+        var servertitle = data.streams[0].servertitle;
+        console.log(servertitle);
+
+        var currentSong = song;
+        console.log(currentSong);
+
+        var serverTitle = servertitle;
+        console.log(serverTitle);
+
+        current_song.empty();
+
+        current_song.append(filterSongTitle(currentSong));
+
+        server_title.empty();
+
+        server_title.append(returningSameString(serverTitle));
+
+        searchSong(filterSongTitle(currentSong));
+    },
+    error: function() {
+        console.error("Could not get song title.");
+    }
+});
+
+
+
+
+
+        
     /*     
     // Every 5 seconds refresh and calls the api to fetch new data
     setInterval(function(){
