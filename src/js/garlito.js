@@ -22,6 +22,7 @@
 
 
 
+        
 
         var htmlPlayer = '<div class="garlito-player"> <div id="garlito-close"><img src="img/close-gray.svg"></div><div class="container-fluid"> <div class="row"> <div class="brand col-12 col-sm-12 col-md-12 col-lg-12 col-xl-12 height"> <div class="branding"> <div class="logo-holder"> <div class="garlito-logo"> <img src="' + settings.logoUrl +'" alt="Fabric Radio"> </div></div><div class="name-holder"> <div class="name">'+ settings.radioName + '</div></div><div class="social-media"> <a id="garlitoFacebookUrl" href="' + settings.facebookUrl + '" target="_blank"><img src="img/facebook.svg"></a> <a id="garlitoInstagramUrl" href="'+ settings.instagramUrl + '" target="_blank"><img src="img/instagram.svg"></a> </div><div class="garlito-cover-mobile"> <img width="60" height="60" src="img/no-cover.jpg" id="garlito-cover-mobile"> </div><div class="play-settings"> <div class="play-pause item"> <img id="garlito-play" alt="Play" src="img/play-gray.svg"> <img id="garlito-pause" alt="Pause" src="img/pause-gray.svg"> </div><div class="volume item"> <input type="range" min="0" max="100" value="" class="slider" id="garlito-volume-slider"> </div></div><div class="garlito-cover"> <img id="garlito-cover" width="60" height="60" src="img/no-cover.jpg" id=""> </div><div class="radio-title"> <span class="now-playing">'+settings.nowPlayingText+'<span> <span id="garlito-currentSong"></span> <span id="garlito-servertitle"></span></div></div></div></div></div></div>';
 
@@ -220,11 +221,28 @@
             }
         });
     }
+
+         
+        
+var diditwork = $.getJSON( statisticsUrl, function() {
+  console.log( "success" );
+})
+  .done(function() {
+    console.log( "second success" );
+  })
+  .fail(function() {
+    console.log( "error" );
+  })
+  .always(function() {
+    console.log( "complete" );
+  });
+        
     
-
     // First Fetch of the data
-    $.getJSON('https://blast.metro-radio.com/' + statisticsUrl, function(data) {
-
+    $.getJSON(statisticsUrl, function(data) {
+        console.log("Finally inside getJSON");
+        console.log(data);
+        
         var song = data.streams[0].songtitle;
         console.log(song);
 
@@ -253,28 +271,21 @@
 
         searchSong(filterSongTitle(currentSong));
     });
-    /*     
-    // Every 5 seconds refresh and calls the api to fetch new data
-    setInterval(function(){
-        $.getJSON('https://blast.metro-radio.com/' + statisticsUrl, function(data) {
 
-            var song = data.streams[0].songtitle;
-
-            //song = song.split(" - ");
-
-            //song = song[1] + " - " + song[2];
-
-            var currentSong =song;
-
-            current_song.empty();
-
-            current_song.append(filterSongTitle(currentSong));
-
-            searchSong(filterSongTitle(currentSong));
-        });
-    }, 5000);
-    */
     return _this;
+
+    var doesitstillwork = $.getJSON( statisticsUrl, function() {
+  console.log( "ssssuccess" );
+})
+  .done(function() {
+    console.log( "ssssecond success" );
+  })
+  .fail(function() {
+    console.log( "eeeerror" );
+  })
+  .always(function() {
+    console.log( "cccccomplete" );
+  });
 
     };
 
